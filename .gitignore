@@ -1,0 +1,23 @@
+# Entorno virtual
+venv/
+.venv/
+env/
+.env
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.coverage
+htmlcov/
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.sqlite
+*.sqlite3
+*.db
+chroma_db/
+.chromadb/
+*.log
+*.tmp
+*.bak
