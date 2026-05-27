@@ -1,17 +1,28 @@
 from abc import ABC, abstractmethod
 from pathlib import Path
 
-class Almacenamiento(ABC):
-    @abstractmethod
-    def guardar(self, nombre: str, contenido: bytes) -> str: ...
-    @abstractmethod
-    def obtener(self, nombre: str) -> bytes: ...  # lanza FileNotFoundError si no existe
-    @abstractmethod
-    def eliminar(self, nombre: str) -> bool: ...  # True si eliminó, False si no existía
-    @abstractmethod
-    def listar(self) -> list[str]: ...
 
-class AlmacenamientoLocal(Almacenamiento):
+class AlmacenamientoLectura(ABC):
+    @abstractmethod
+    def obtener(self, nombre: str) -> bytes:
+        ...
+
+    @abstractmethod
+    def listar(self) -> list[str]:
+        ...
+
+
+class AlmacenamientoEscritura(AlmacenamientoLectura):
+    @abstractmethod
+    def guardar(self, nombre: str, contenido: bytes) -> str:
+        ...
+
+    @abstractmethod
+    def eliminar(self, nombre: str) -> bool:
+        ...
+
+
+class AlmacenamientoLocal(AlmacenamientoEscritura):
     def __init__(self, directorio: str):
         self.directorio = Path(directorio)
         self.directorio.mkdir(exist_ok=True)
@@ -23,44 +34,51 @@ class AlmacenamientoLocal(Almacenamiento):
 
     def obtener(self, nombre: str) -> bytes:
         ruta = self.directorio / nombre
+
         if not ruta.exists():
             raise FileNotFoundError(f"{nombre} no encontrado")
+
         return ruta.read_bytes()
 
     def eliminar(self, nombre: str) -> bool:
         ruta = self.directorio / nombre
+
         if ruta.exists():
             ruta.unlink()
             return True
+
         return False
 
     def listar(self) -> list[str]:
-        return [f.name for f in self.directorio.iterdir() if f.is_file()]
+        return [
+            archivo.name
+            for archivo in self.directorio.iterdir()
+            if archivo.is_file()
+        ]
 
 
-class AlmacenamientoSoloLectura(Almacenamiento):
-    """Para recursos estáticos del sistema (logos, plantillas)."""
+class AlmacenamientoSoloLectura(AlmacenamientoLectura):
     def __init__(self, directorio: str):
         self.directorio = Path(directorio)
 
-    def guardar(self, nombre: str, contenido: bytes) -> str:
-        raise PermissionError("Solo lectura")          # ← VIOLA LSP
-
     def obtener(self, nombre: str) -> bytes:
         ruta = self.directorio / nombre
+
         if not ruta.exists():
             raise FileNotFoundError(f"{nombre} no encontrado")
+
         return ruta.read_bytes()
 
-    def eliminar(self, nombre: str) -> bool:
-        raise PermissionError("Solo lectura")           # ← VIOLA LSP
-
     def listar(self) -> list[str]:
-        return [f.name for f in self.directorio.iterdir() if f.is_file()]
+        return [
+            archivo.name
+            for archivo in self.directorio.iterdir()
+            if archivo.is_file()
+        ]
 
 
-class AlmacenamientoConCache(Almacenamiento):
-    def __init__(self, base: Almacenamiento):
+class AlmacenamientoConCache(AlmacenamientoEscritura):
+    def __init__(self, base: AlmacenamientoEscritura):
         self.base = base
         self.cache = {}
 
@@ -68,15 +86,14 @@ class AlmacenamientoConCache(Almacenamiento):
         self.cache[nombre] = contenido
         return self.base.guardar(nombre, contenido)
 
-    def obtener(self, nombre: str) -> bytes | None:     # ← VIOLA LSP: tipo de retorno distinto
+    def obtener(self, nombre: str) -> bytes:
         if nombre in self.cache:
             return self.cache[nombre]
-        try:
-            datos = self.base.obtener(nombre)
-            self.cache[nombre] = datos
-            return datos
-        except FileNotFoundError:
-            return None                                  # ← debería relanzar el error
+
+        contenido = self.base.obtener(nombre)
+        self.cache[nombre] = contenido
+
+        return contenido
 
     def eliminar(self, nombre: str) -> bool:
         self.cache.pop(nombre, None)
@@ -86,18 +103,14 @@ class AlmacenamientoConCache(Almacenamiento):
         return self.base.listar()
 
 
-# Esta función debe funcionar con CUALQUIER Almacenamiento sin checks especiales
-def procesar_adjuntos(storage: Almacenamiento, nombres: list[str]) -> dict:
+def procesar_adjuntos(storage: AlmacenamientoLectura, nombres: list[str]) -> dict:
     resultados = {}
+
     for nombre in nombres:
         try:
             contenido = storage.obtener(nombre)
-            if contenido is None:                        # ← no debería ser necesario
-                resultados[nombre] = "no_encontrado"
-            else:
-                resultados[nombre] = f"{len(contenido)}_bytes"
-        except PermissionError:                          # ← no debería ser necesario
-            resultados[nombre] = "sin_permiso"
+            resultados[nombre] = f"{len(contenido)}_bytes"
         except FileNotFoundError:
             resultados[nombre] = "no_encontrado"
+
     return resultados
